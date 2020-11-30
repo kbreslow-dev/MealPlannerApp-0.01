@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
 
@@ -12,7 +13,7 @@ namespace MealPlannerApp
             using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
             {
                 db.Open();
-                string cmd = "CREATE TABLE IF NOT EXISTS RecipeList (id TEXT, name TEXT)";
+                string cmd = "CREATE TABLE IF NOT EXISTS RecipeList (id TEXT, name TEXT, meal TEXT)";
 
                 var createTable = new SqliteCommand(cmd, db);
                 createTable.ExecuteReader();
@@ -26,6 +27,7 @@ namespace MealPlannerApp
             Console.WriteLine("[1] - Add/View Meal Plan.");
             Console.WriteLine("[2] - Add/View Recipe.");
             Console.WriteLine("[3] - Add/View Grocery List. ");
+            Console.WriteLine("[4] - Export file.");
             Console.WriteLine("[0] - Quit.");
             var choice = Console.ReadLine();
 
@@ -39,6 +41,9 @@ namespace MealPlannerApp
                     break;
                 case "3":
                     GroceryMenu();
+                    break;
+                case "4":
+                    WriteFile();
                     break;
                 case "0":
                     Environment.Exit(0);
@@ -256,6 +261,8 @@ namespace MealPlannerApp
             Console.Write("Recipe Name: ");
             string name = Console.ReadLine();
             string id;
+            Console.WriteLine("Enter the meal (breakfast, lunch, dinner) this recipe is normally for.");
+            string meal = Console.ReadLine();
 
             using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
             {
@@ -269,9 +276,10 @@ namespace MealPlannerApp
                     
                 }
                 id = string.Format("{0:000}", idCount);
-                var insertCommand = new SqliteCommand("INSERT INTO RecipeList(id, name) VALUES (@id, @name)", db);
+                var insertCommand = new SqliteCommand("INSERT INTO RecipeList(id, name, meal) VALUES (@id, @name, @meal)", db);
                 insertCommand.Parameters.AddWithValue("@id", id);
                 insertCommand.Parameters.AddWithValue("@name", name);
+                insertCommand.Parameters.AddWithValue("@meal", meal);
 
                 insertCommand.ExecuteNonQuery();
 
@@ -407,7 +415,7 @@ namespace MealPlannerApp
         struct Ingredient
         {
             public string name;
-            public int quantity;
+            public float quantity;
             public string unit;
         }
         static void AddGrocery()
@@ -416,6 +424,7 @@ namespace MealPlannerApp
             Console.WriteLine("Enter the date (MM/DD/YYYY) of the Meal Plan you would like to generate a Grocery List for");
             var mealsList = new List<string>();
             var ingredientsList = new List<Ingredient>();
+            var groceryList = new List<Ingredient>();
             string dateString = Console.ReadLine();
             DateTime date;
 
@@ -455,40 +464,225 @@ namespace MealPlannerApp
                         temp.name = getIngredientsQuery.GetString(2);
                         temp.quantity = getIngredientsQuery.GetInt32(3);
                         temp.unit = getIngredientsQuery.GetString(4);
-                        if (ingredientsList.Count == 0)
-                            ingredientsList.Add(temp);
-                        for (int j = 0; j < ingredientsList.Count; j++)
-                        {
-
-                            if (ingredientsList[j].name == temp.name && ingredientsList[j].unit == temp.unit)
-                            {
-                                temp.quantity += ingredientsList[j].quantity;
-                                ingredientsList[j] = temp;
-                            }
-                            else
-                                ingredientsList.Add(temp);
- 
-                        }
-
+                        ingredientsList.Add(temp);
                     }
                 }
 
-                for (int k = 0; k < ingredientsList.Count; k++)
+                for (int j = 0; j < ingredientsList.Count; j++)
                 {
-                    Console.WriteLine(ingredientsList[k].name + "   " + ingredientsList[k].quantity + "   " + ingredientsList[k].unit);
+                    bool isInGrocery = false;
+                    if (groceryList.Count == 0)
+                    {
+                        groceryList.Add(ingredientsList[j]);
+                    }
+                    for (int k = 0; k < groceryList.Count; k++)
+                    {
+                        if (ingredientsList[j].name == groceryList[k].name && ingredientsList[j].unit == groceryList[k].unit)
+                        {
+                            isInGrocery = true;
+                            Ingredient temp = new Ingredient();
+                            temp.name = groceryList[k].name;
+                            temp.quantity = groceryList[k].quantity + ingredientsList[j].quantity;
+                            temp.unit = groceryList[k].unit;
+                            groceryList[k] = temp;
+                        }
+                    }
+                    if (!isInGrocery)
+                        groceryList.Add(ingredientsList[j]);
+
+                }
+
+                for (int l = 0; l < groceryList.Count; l++)
+                {
+                    Console.WriteLine(groceryList[l].name + "   " + groceryList[l].quantity + "   " + groceryList[l].unit);
+                    var addGrocery = new SqliteCommand("INSERT INTO " + name + "(ingredient, quantity, unit) VALUES(@ingredient, @quantity, @unit)", db);
+                    addGrocery.Parameters.AddWithValue("@ingredient", groceryList[l].name);
+                    addGrocery.Parameters.AddWithValue("@quantity", groceryList[l].quantity);
+                    addGrocery.Parameters.AddWithValue("@unit", groceryList[l].unit);
+                    addGrocery.ExecuteNonQuery();
                 }
 
             }
+            Console.WriteLine("\n\nWould you like to add another ingredient?");
+            Console.WriteLine("[1] - Yes.");
+            Console.WriteLine("[2] - No.");
+            string choice = Console.ReadLine();
+
+            if (choice == "1")
+                AddItem(name);
+            else
+                GroceryMenu ();
+
+
+        }
+
+        static void AddItem(string listName)
+        {
+            Console.Write("Ingredient: ");
+            string name = Console.ReadLine();
+            Console.Write("Quantity: ");
+            string quantity = Console.ReadLine();
+            Console.Write("Unit: ");
+            string unit = Console.ReadLine();
+            using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
+            {
+                db.Open();
+                string cmd = "INSERT INTO" + listName + "(ingredient, quantity, unit) VALUES(@ingredient, @quantity, @unit)";
+                var insertCmd = new SqliteCommand(cmd, db);
+                insertCmd.Parameters.AddWithValue("@ingredient", name);
+                insertCmd.Parameters.AddWithValue("@quantity", quantity);
+                insertCmd.Parameters.AddWithValue("@unit", unit);
+
+                insertCmd.ExecuteNonQuery();
+            }
+            Console.WriteLine(name + " added.");
+            Console.WriteLine("\n\nWould you like to add another ingredient?");
+            Console.WriteLine("[1] - Yes.");
+            Console.WriteLine("[2] - No.");
+            string choice = Console.ReadLine();
+
+            if (choice == "1")
+                AddItem(listName);
+            else
+                GroceryMenu();
         }
 
         static void ViewGrocery()
         {
+            Console.WriteLine("Enter the date (MM/DD/YYYY) of the Grocery List you would like to view.");
+            Console.WriteLine("Or type ALL to view a list of all Grocery Lists");
+            string dateString = Console.ReadLine();
+            string name = dateString;
+            if (dateString != "ALL")
+            {
+                DateTime date;
+                if (!DateTime.TryParse(dateString, out date))
+                {
+                    Console.WriteLine("Value entered is not a valid date.");
+                    ViewMealPlan();
+                }
 
+                name = $"[GroceryList{date:d}]";
+            }
+            using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
+            {
+                db.Open();
+                var selectCmd = new SqliteCommand("SELECT ingredient, quantity, unit FROM" + name, db);
+                if (dateString == "ALL")
+                    selectCmd = new SqliteCommand("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'GroceryList%' ORDER BY 1", db);
+                try
+                {
+                    selectCmd.ExecuteNonQuery();
+                }
+                catch(SqliteException)
+                {
+                    Console.WriteLine("No Grocery List with that date exists");
+                    ViewGrocery();
+                }
+
+                var query = selectCmd.ExecuteReader();
+                while (query.Read())
+                {
+                    if (dateString == "ALL")
+                        Console.WriteLine(query.GetString(0));
+                    else
+                        Console.WriteLine(query.GetString(0) + "   " + query.GetString(1) + "   " + query.GetString(2));
+                }
+            }
+            if (dateString != "ALL")
+            {
+                Console.WriteLine("\n\nWould you like to add another ingredient?");
+                Console.WriteLine("[1] - Yes.");
+                Console.WriteLine("[2] - No.");
+                string choice = Console.ReadLine();
+
+                if (choice == "1")
+                    AddItem(name);
+
+            }
+            GroceryMenu();
         }
 
         static void DeleteGrocery()
         {
+            Console.Write("Grocery List Name: ");
+            string name = "[" + Console.ReadLine() + "]";
 
+            using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
+            {
+                db.Open();
+                var deleteCommand = new SqliteCommand("DROP TABLE IF EXISTS " + name, db);
+                deleteCommand.ExecuteNonQuery();
+
+                Console.WriteLine("\n" + name + " has been deleted.");
+
+
+            }
+            GroceryMenu();
+        }
+
+        static void WriteFile()
+        {
+            Console.WriteLine("Would you like to export a Meal Plan or Grocery List?");
+            Console.WriteLine("[1] - Meal Plan.");
+            Console.WriteLine("[2] - Grocery List.");
+            Console.WriteLine("[0] - Main Menu.");
+            string choice = Console.ReadLine();
+            string name = "MealPlan";
+
+            switch (choice)
+            {
+                case "1":
+                    name = "MealPlan";
+                    break;
+                case "2":
+                    name = "GroceryList";
+                    break;
+                case "3":
+                    MainMenu();
+                    break;
+                default:
+                    Console.WriteLine("Please select menu number.");
+                    WriteFile();
+                    break;
+            }
+
+            Console.WriteLine("Please enter the date (MM/DD/YYYY) of the " + name + "you wan to export.");
+            string dateString = Console.ReadLine();
+            DateTime date;
+            if (!DateTime.TryParse(dateString, out date))
+            {
+                Console.WriteLine("value is not a valid date.");
+                WriteFile();
+            }
+            string queryName = "[" + name + $"{date:d}]";
+
+            using var db = new SqliteConnection("Data Source=MealPlannerApp.db;Cache=Shared");
+            {
+                db.Open();
+                var selectCmd = new SqliteCommand("SELECT * FROM" + queryName, db);
+                var reader = selectCmd.ExecuteReader();
+
+                string fileName = "temp.csv";
+                StreamWriter sw = new StreamWriter(fileName);
+                object[] output = new object[reader.FieldCount];
+
+                for (int i = 0; i < reader.FieldCount; i++)
+                    output[i] = reader.GetName(i);
+                sw.WriteLine(string.Join(",", output));
+
+                while (reader.Read())
+                {
+                    reader.GetValues(output);
+                    sw.WriteLine(string.Join(",", output));
+                }
+
+                sw.Close();
+                reader.Close();
+
+            }
+            Console.WriteLine(queryName + "has been exported.");
+            MainMenu();
         }
 
     }
